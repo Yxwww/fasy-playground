@@ -1,6 +1,7 @@
 const FA = require('fasy')
 
 const prop = p => o => o[p]
+const id = p => p
 
 const delay = duration => {
   return new Promise(resolve => {
@@ -22,66 +23,88 @@ const fetch = async (url, responseTime = 1000, isThrowing = false) => {
 
 const requestData = [['1', 2000], ['2', 500, true]]
 
-async function serialMap () {
+async function serialMap() {
   await FA.serial.map(
     ([url, responseTime]) => fetch(url, responseTime),
     requestData
   )
 }
 
-async function concurrentMap () {
+async function concurrentMap() {
   const result = await FA.concurrent.map(
-    (args) => fetch(...args).catch(e => {
-      console.log('catching in map call', e) // catch exception at highest level
-      return { status: 'failed' }
-    }),
+    args =>
+      fetch(...args).catch(e => {
+        console.log('catching in map call', e) // catch exception at highest level
+        return { status: 'failed' }
+      }),
     requestData
   )
 
   console.log('concurrent', { result })
 }
 
-function interval (duration = 1000) {
+async function pipeDemo() {
+  const result = await FA.serial.pipe([
+    ([url, time]) => fetch(url, time),
+    async data => {
+      console.log('in delay')
+      const result = await delay(5000).then(() => data)
+      console.log(result)
+      return result
+    },
+    prop('data'),
+  ])(['1', 1000])
+  console.log({ result })
+}
+
+function interval(duration = 1000) {
   let index = 0
   let subscriber = null
 
-  const interval = setInterval(() => {
-    // yield index ++;
+  const i = setInterval(() => {
     subscriber(++index)
   }, duration)
 
+  const unsubscribeFn = () => {
+    clearInterval(i)
+  }
+
+  const subscribe = fn => {
+    subscriber = fn
+    return unsubscribeFn
+  }
+
   return {
-    subscribe: fn => {
-      subscriber = fn
-      return () => {
-        clearInterval(interval)
-      }
-    }
+    subscribe,
+    pipe: async function(fns) {
+      await FA.serial.pipe(fns)
+    },
   }
 }
 
-// async function pipeDemo () {
-//   const result = await FA.serial.pipe([
-//     ([url, time]) => fetch(url, time),
-//     async data => {
-//       console.log('in delay')
-//       const result = await delay(5000).then(() => data)
-//       console.log(result)
-//       return result
-//     },
-//     prop('data')
-//   ])(['1', 1000])
-//   console.log({ result })
-// }
+function tween(duration) {
+  interval(2000)
+    .pipe([
+      async data => {
+        console.log('before delay')
+        return delay(500).then(() => data)
+      },
+    ])
+    .subscribe(data => {
+      console.log(`tween subscribe ${data}`)
+    })
+}
+
+tween()
 
 // pipeDemo()
 // serialMap()
 // concurrentMap()
 
-const unsubscribe = interval(500).subscribe(i => {
-  console.log(i)
-})
+// const unsubscribe = interval(500).subscribe(i => {
+//   console.log(i)
+// })
 
-delay(5000).then(() => {
-  unsubscribe()
-})
+// delay(5000).then(() => {
+//   unsubscribe()
+// })
